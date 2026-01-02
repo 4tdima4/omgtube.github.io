@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OMGTube - Видео платформа</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial; background: #0f0f0f; color: white; }
+        
+        /* Навигация */
+        .navbar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 24px; background: #212121; position: sticky; top: 0; z-index: 1000;
+        }
+        .logo { font-size: 24px; font-weight: bold; color: #ff0000; }
+        .nav-links a { color: white; text-decoration: none; margin-left: 20px; padding: 8px 16px; border-radius: 4px; }
+        .nav-links a:hover { background: #383838; }
+        
+        /* Видео сетка */
+        .video-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px; padding: 24px; max-width: 1400px; margin: 0 auto;
+        }
+        .video-card {
+            background: #212121; border-radius: 12px; overflow: hidden; cursor: pointer;
+            transition: transform 0.3s; position: relative;
+        }
+        .video-card:hover { transform: translateY(-5px); }
+        .video-thumbnail {
+            width: 100%; height: 180px; object-fit: cover; background: linear-gradient(45deg, #ff0000, #ff6b6b);
+        }
+        .video-info { padding: 12px; }
+        .video-title { font-weight: bold; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .video-channel { color: #aaa; font-size: 14px; margin-bottom: 4px; }
+        .video-stats { color: #aaa; font-size: 14px; display: flex; gap: 12px; }
+        
+        /* Аватар */
+        .avatar {
+            width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(45deg, #ff0000, #ff6b6b);
+            display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;
+        }
+        
+        /* Кнопки */
+        .btn {
+            background: #ff0000; color: white; border: none; padding: 10px 20px;
+            border-radius: 20px; cursor: pointer; font-weight: bold; transition: background 0.3s;
+        }
+        .btn:hover { background: #cc0000; }
+        .btn-secondary {
+            background: #383838; color: white; border: none; padding: 8px 16px;
+            border-radius: 20px; cursor: pointer;
+        }
+        
+        /* Модальные окна */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: #212121; padding: 30px; border-radius: 12px; min-width: 400px;
+            max-width: 90%; position: relative;
+        }
+        .close-modal {
+            position: absolute; top: 15px; right: 15px; color: white; cursor: pointer; font-size: 24px;
+        }
+        .modal input, .modal textarea {
+            width: 100%; padding: 12px; margin-bottom: 15px; background: #121212;
+            border: 1px solid #383838; border-radius: 4px; color: white;
+        }
+        
+        /* Адаптивность */
+        @media (max-width: 768px) {
+            .video-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+            .navbar { flex-direction: column; gap: 15px; padding: 15px; }
+        }
+        
+        /* Уведомления */
+        .notification {
+            position: fixed; bottom: 20px; right: 20px; background: #4CAF50; color: white;
+            padding: 15px 25px; border-radius: 8px; z-index: 3000; display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Навигация -->
+    <nav class="navbar">
+        <div class="logo">OMGTube</div>
+        <div class="nav-links">
+            <a href="#" onclick="showUploadModal()">📤 Загрузить видео</a>
+            <span id="auth-buttons">
+                <a href="auth.html" class="btn">Войти</a>
+            </span>
+            <div id="user-menu" style="display: none;">
+                <span id="username-display"></span>
+                <button onclick="logout()" class="btn-secondary" style="margin-left: 15px;">Выйти</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Контент -->
+    <main>
+        <div class="video-grid" id="video-grid">
+            <!-- Видео загружаются здесь -->
+        </div>
+    </main>
+
+    <!-- Модалка загрузки видео -->
+    <div id="upload-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="hideUploadModal()">×</span>
+            <h2>📤 Загрузить видео</h2>
+            <form id="upload-form">
+                <input type="text" id="video-title" placeholder="Название видео" required>
+                <textarea id="video-description" placeholder="Описание" rows="3"></textarea>
+                <input type="file" id="video-file" accept="video/*" required>
+                <button type="submit" class="btn" style="width: 100%;">Загрузить</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Уведомление -->
+    <div id="notification" class="notification"></div>
+
+    <!-- Supabase CDN и основной скрипт -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // =================== ИНИЦИАЛИЗАЦИЯ SUPABASE ===================
+        const SUPABASE_URL = 'https://sbrbed72ad5k3gr9di_uug.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_sBrBED72Ad5k3GR9DI_uUg_-AwTf8LA';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        // =================== ПЕРЕМЕННЫЕ ===================
+        let currentUser = null;
+
+        // =================== СИСТЕМА АВТОРИЗАЦИИ ===================
+        async function checkAuth() {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                currentUser = session.user;
+                document.getElementById('auth-buttons').style.display = 'none';
+                document.getElementById('user-menu').style.display = 'block';
+                document.getElementById('username-display').textContent = session.user.email;
+            }
+        }
+
+        async function logout() {
+            await supabase.auth.signOut();
+            window.location.reload();
+        }
+
+        // =================== ЗАГРУЗКА ВИДЕО ===================
+        async function loadVideos() {
+            const { data: videos, error } = await supabase
+                .from('videos')
+                .select(`
+                    *,
+                    profiles:user_id (username, avatar_url)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Ошибка загрузки видео:', error);
+                return;
+            }
+
+            const videoGrid = document.getElementById('video-grid');
+            videoGrid.innerHTML = '';
+
+            videos.forEach(video => {
+                const videoCard = document.createElement('div');
+                videoCard.className = 'video-card';
+                videoCard.onclick = () => window.location.href = `video.html?id=${video.id}`;
+                
+                videoCard.innerHTML = `
+                    <div class="video-thumbnail"></div>
+                    <div class="video-info">
+                        <div class="video-title">${video.title}</div>
+                        <div class="video-channel">${video.profiles?.username || 'Пользователь'}</div>
+                        <div class="video-stats">
+                            <span>👁 ${video.views_count || 0}</span>
+                            <span>❤️ ${video.likes_count || 0}</span>
+                        </div>
+                    </div>
+                `;
+                videoGrid.appendChild(videoCard);
+            });
+        }
+
+        // =================== ЗАГРУЗКА ВИДЕО НА СЕРВЕР ===================
+        document.getElementById('upload-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const title = document.getElementById('video-title').value;
+            const description = document.getElementById('video-description').value;
+            const file = document.getElementById('video-file').files[0];
+            
+            if (!currentUser) {
+                showNotification('Сначала войдите в аккаунт!');
+                return;
+            }
+            
+            if (!file) {
+                showNotification('Выберите видео файл!');
+                return;
+            }
+            
+            try {
+                // 1. Загружаем видео в Storage
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${currentUser.id}/${Date.now()}.${fileExt}`;
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('videos')
+                    .upload(fileName, file);
+                
+                if (uploadError) throw uploadError;
+                
+                // 2. Получаем публичный URL
+                const { data: { publicUrl } } = supabase.storage
+                    .from('videos')
+                    .getPublicUrl(uploadData.path);
+                
+                // 3. Сохраняем в базу данных
+                const { error: dbError } = await supabase
+                    .from('videos')
+                    .insert([{
+                        user_id: currentUser.id,
+                        title,
+                        description,
+                        video_url: publicUrl,
+                        thumbnail_url: 'https://placehold.co/1280x720/FF0000/FFFFFF?text=OMGTube',
+                        duration: 120,
+                        views_count: 0,
+                        likes_count: 0
+                    }]);
+                
+                if (dbError) throw dbError;
+                
+                showNotification('✅ Видео успешно загружено!');
+                hideUploadModal();
+                loadVideos();
+                
+            } catch (error) {
+                console.error('Ошибка загрузки:', error);
+                showNotification('❌ Ошибка загрузки видео');
+            }
+        });
+
+        // =================== МОДАЛЬНЫЕ ОКНА ===================
+        function showUploadModal() {
+            if (!currentUser) {
+                window.location.href = 'auth.html';
+                return;
+            }
+            document.getElementById('upload-modal').style.display = 'flex';
+        }
+        
+        function hideUploadModal() {
+            document.getElementById('upload-modal').style.display = 'none';
+            document.getElementById('upload-form').reset();
+        }
+
+        // =================== УВЕДОМЛЕНИЯ ===================
+        function showNotification(message) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.style.display = 'block';
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+
+        // =================== ИНИЦИАЛИЗАЦИЯ ===================
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkAuth();
+            await loadVideos();
+            
+            // Закрытие модалки по клику вне
+            window.onclick = (e) => {
+                if (e.target.classList.contains('modal')) {
+                    hideUploadModal();
+                }
+            };
+        });
+    </script>
+</body>
+</html>
